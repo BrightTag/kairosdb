@@ -55,7 +55,7 @@ public class OpaqueStormDataPoint extends DataPointHelper
 	@Override
 	public long getLongValue()
 	{
-		return parseJson()[1];
+		return getCurrentValue();
 	}
 
 	@Override
@@ -67,28 +67,22 @@ public class OpaqueStormDataPoint extends DataPointHelper
 	@Override
 	public double getDoubleValue()
 	{
-		return (double)parseJson()[1];
+		return (double)getCurrentValue();
 	}
 
-  private static final long[] UNPARSABLE_JSON = new long[]{ 0, 0, 0 };
-
-  private long[] parseJson() {
+  private long getCurrentValue() {
     // Let's not actually use a JSON parser here. Smaller footprint. But is it more efficient???
     if (m_value.charAt(0) != '[' || m_value.charAt(m_value.length()-1) != ']') {
-      return UNPARSABLE_JSON;
+      return 0;
     }
     String[] parts = m_value.substring(1, m_value.length()-1).split(",");
     if (parts.length != 3) {
-      return UNPARSABLE_JSON;
+      return 0;
     }
     try {
-      long[] value = new long[parts.length];
-      for (int i=0; i<parts.length; i++) {
-        value[i] = Long.parseLong(parts[i]);
-      }
-      return value;
+      return Long.parseLong(parts[1]);
     } catch (NumberFormatException e) {
-      return UNPARSABLE_JSON;
+      return 0;
     }
   }
 }
