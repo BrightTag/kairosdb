@@ -31,6 +31,7 @@ import org.kairosdb.core.groupby.*;
 import org.kairosdb.core.http.rest.json.GsonParser;
 import org.kairosdb.core.jobs.CacheFileCleaner;
 import org.kairosdb.core.scheduler.KairosDBScheduler;
+import org.kairosdb.datastore.cassandra.elasticsearch.ElasticSearchModule;
 import org.kairosdb.util.MemoryMonitor;
 import org.kairosdb.util.Util;
 
@@ -96,6 +97,8 @@ public class CoreModule extends AbstractModule
 		bind(ValueGroupBy.class);
 		bind(TimeGroupBy.class);
 		bind(TagGroupBy.class);
+
+		install(new ElasticSearchModule());
 
 		Names.bindProperties(binder(), m_props);
 		bind(Properties.class).toInstance(m_props);

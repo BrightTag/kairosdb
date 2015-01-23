@@ -15,6 +15,7 @@
  */
 package org.kairosdb.core.datastore;
 
+import com.google.common.base.Objects;
 import com.google.common.collect.HashMultimap;
 import com.google.common.collect.SetMultimap;
 import org.kairosdb.core.aggregator.Aggregator;
@@ -199,5 +200,16 @@ public class QueryMetric implements DatastoreMetricQuery
 	{
 		this.plugins.add(plugin);
 		return this;
+	}
+
+	@Override
+	public String toString() {
+		return Objects.toStringHelper(this)
+				.add("name", name)
+				.add("start", startTime)
+				.add("end", endTime)
+				.add("tags", tags)
+				.add("limit", limit)
+				.toString();
 	}
 }

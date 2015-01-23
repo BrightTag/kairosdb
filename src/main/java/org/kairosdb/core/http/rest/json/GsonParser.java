@@ -193,15 +193,15 @@ public class GsonParser
 				JsonElement aggregators = jsMetric.get("aggregators");
 				if (aggregators != null)
 				{
-					JsonArray asJsonArray = aggregators.getAsJsonArray();
-					if (asJsonArray.size() > 0)
-						parseAggregators(context, queryMetric, asJsonArray);
+					JsonArray aggregatorsArray = aggregators.getAsJsonArray();
+					if (aggregatorsArray.size() > 0)
+						parseAggregators(context, queryMetric, aggregatorsArray);
 				}
 
 				JsonElement plugins = jsMetric.get("plugins");
 				if (plugins != null)
 				{
-					JsonArray pluginArray = aggregators.getAsJsonArray();
+					JsonArray pluginArray = plugins.getAsJsonArray();
 					if (pluginArray.size() > 0)
 						parsePlugins(context, queryMetric, pluginArray);
 				}

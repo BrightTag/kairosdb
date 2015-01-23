@@ -28,7 +28,7 @@ saw.setProperty(Tablesaw.PROP_MULTI_THREAD_OUTPUT, Tablesaw.PROP_VALUE_ON)
 programName = "kairosdb"
 //Do not use '-' in version string, it breaks rpm uninstall.
 version = "0.9.5-SNAPSHOT"
-release = "1" //package release number
+release = "1.signal.0" //package release number
 summary = "KairosDB"
 description = """\
 KairosDB is a time series database that stores numeric values along
@@ -77,8 +77,8 @@ jp = new JavaProgram()
 jc = jp.getCompileRule()
 jc.addDepend(ivy.getResolveRule("default"))
 
-jc.getDefinition().set("target", "1.6")
-jc.getDefinition().set("source", "1.6")
+jc.getDefinition().set("target", "1.7")
+jc.getDefinition().set("source", "1.7")
 
 additionalFiles = new RegExFileSet("src/main/java", ".*\\.sql").recurse()
 jp.getJarRule().addFileSet(additionalFiles)
@@ -212,6 +212,7 @@ def doIvyResolve(Rule rule)
 	for (String jar in classpath.getPaths())
 	{
 		file = new File(jar)
+		print file
 		ivyFileSet.addFile(file.getParent(), file.getName())
 	}
 }

@@ -26,6 +26,9 @@ public class CassandraConfiguration
 	public static final String MULTI_ROW_READ_SIZE_PROPERTY = "kairosdb.datastore.cassandra.multi_row_read_size";
 	public static final String MULTI_ROW_SIZE_PROPERTY = "kairosdb.datastore.cassandra.multi_row_size";
 
+	public static final String ELASTICSEARCH_HOST_LIST = "kairosdb.datastore.cassandra.elasticsearch.host_list";
+	public static final String ELASTICSEARCH_CLUSTER_NAME = "kairosdb.datastore.cassandra.elasticsearch.cluster_name";
+	public static final String ELASTICSEARCH_INDEX_NAME = "kairosdb.datastore.cassandra.elasticsearch.index_name";
 
 	@Inject
 	@Named(WRITE_CONSISTENCY_LEVEL)
@@ -79,6 +82,17 @@ public class CassandraConfiguration
 	@Named(KEYSPACE_PROPERTY)
 	private String m_keyspaceName;
 
+	@Inject
+	@Named(ELASTICSEARCH_HOST_LIST)
+	private String m_elasticSearchHostList;
+
+	@Inject(optional=true)
+	@Named(ELASTICSEARCH_CLUSTER_NAME)
+	private String m_elasticSearchClusterName = "elasticsearch";
+
+	@Inject(optional=true)
+	@Named(ELASTICSEARCH_INDEX_NAME)
+	private String m_elasticSearchIndexName = "kairosdb";
 
 	public CassandraConfiguration()
 	{
@@ -90,7 +104,10 @@ public class CassandraConfiguration
 			int multiRowReadSize,
 			int writeDelay,
 			int maxWriteSize,
-			String keyspaceName)
+			String keyspaceName,
+			String elasticSearchHostList,
+			String elasticSearchClusterName,
+			String elasticSearchIndexName)
 	{
 		m_replicationFactor = replicationFactor;
 		m_singleRowReadSize = singleRowReadSize;
@@ -99,6 +116,9 @@ public class CassandraConfiguration
 		m_writeDelay = writeDelay;
 		m_maxWriteSize = maxWriteSize;
 		m_keyspaceName = keyspaceName;
+		m_elasticSearchHostList = elasticSearchHostList;
+		m_elasticSearchClusterName = elasticSearchClusterName;
+		m_elasticSearchIndexName = elasticSearchIndexName;
 	}
 
 	public ConsistencyLevel getDataWriteLevel()
@@ -164,5 +184,17 @@ public class CassandraConfiguration
 	public String getKeyspaceName()
 	{
 		return m_keyspaceName;
+	}
+
+	public String getElasticSearchHostList() {
+		return m_elasticSearchHostList;
+	}
+
+	public String getElasticSearchClusterName() {
+		return m_elasticSearchClusterName;
+	}
+
+	public String getElasticSearchIndexName() {
+		return m_elasticSearchIndexName;
 	}
 }

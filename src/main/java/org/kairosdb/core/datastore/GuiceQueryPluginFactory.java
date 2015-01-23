@@ -36,6 +36,10 @@ public class GuiceQueryPluginFactory implements QueryPluginFactory
 
 				m_plugins.put(ann.name(), bindingClass);
 			}
+			else if (QueryPlugin.class.isAssignableFrom(bindingClass)) {
+				QueryPlugin plugin = (QueryPlugin)m_injector.getInstance(bindingClass);
+				m_plugins.put(plugin.getName(), bindingClass);
+			}
 		}
 	}
 
