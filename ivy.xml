@@ -7,7 +7,8 @@
 		<conf name="test" extends="default"/>
 	</configurations>
 	<dependencies>
-		<dependency org="com.google.guava" name="guava" rev="14.0">
+    <dependency org="org.elasticsearch" name="elasticsearch" rev="1.4.2" />
+    <dependency org="com.google.guava" name="guava" rev="14.0">
 			<artifact name="guava" type="bundle" ext="jar"/>
 		</dependency>
 		<!--<dependency org="org.javassist" name="javassist" rev="3.17.1-GA" />-->
