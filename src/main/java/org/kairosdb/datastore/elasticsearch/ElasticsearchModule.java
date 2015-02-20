@@ -23,8 +23,9 @@ public class ElasticsearchModule extends AbstractModule {
 
   private static final Logger logger = LoggerFactory.getLogger(ElasticsearchModule.class);
 
-  private static final String HOST_LIST_PROPERTY = "kairosdb.datastore.elasticsearch.host_list";
-  private static final String CLUSTER_NAME_PROPERTY = "kairosdb.datastore.elasticsearch.cluster_name";
+  static final String HOST_LIST_PROPERTY = "kairosdb.datastore.elasticsearch.host_list";
+  static final String CLUSTER_NAME_PROPERTY = "kairosdb.datastore.elasticsearch.cluster_name";
+  static final String MAX_RECORD_COUNT = "kairosdb.datastore.elasticsearch.max_record_count";
 
   @Override
   protected void configure() {
@@ -43,5 +44,10 @@ public class ElasticsearchModule extends AbstractModule {
       client.addTransportAddress(new InetSocketTransportAddress(host, 9300));
     }
     return client;
+  }
+
+  @Provides @Named(MAX_RECORD_COUNT)
+  int provideLimitSize() {
+    return Integer.getInteger(MAX_RECORD_COUNT, 50);
   }
 }

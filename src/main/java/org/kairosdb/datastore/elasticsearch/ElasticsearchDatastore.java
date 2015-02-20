@@ -7,6 +7,7 @@ import java.util.Map;
 import java.util.SortedMap;
 
 import javax.annotation.Nullable;
+import javax.inject.Named;
 
 import com.google.common.base.Function;
 import com.google.common.base.Joiner;
@@ -63,10 +64,13 @@ public class ElasticsearchDatastore implements Datastore {
   private static final String DATAPOINTS_INDEX = "kairosdb";
 
   private final Client client;
+  private final int limitSize;
 
   @Inject
-  public ElasticsearchDatastore(Client client) {
+  public ElasticsearchDatastore(Client client,
+      @Named(ElasticsearchModule.MAX_RECORD_COUNT) int limitSize) {
     this.client = client;
+    this.limitSize = limitSize;
   }
 
   @Override
@@ -174,7 +178,7 @@ public class ElasticsearchDatastore implements Datastore {
     SearchRequestBuilder request = client.prepareSearch(DATAPOINTS_INDEX)
         .setQuery(queryBuilder)
         .addFields("name", "timestamp", "tags", "value")
-        .setSize(query.getLimit() == 0 ? -1 : query.getLimit())
+        .setSize(limitSize)
         .addSort(SortBuilders.fieldSort("timestamp")
             .order(query.getOrder() == Order.DESC ? SortOrder.DESC : SortOrder.ASC));
     SearchResponse response = request
