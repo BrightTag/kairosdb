@@ -96,7 +96,8 @@ public class ElasticsearchDatastore implements Datastore {
           .endObject();
 
       IndexRequestBuilder request = client.prepareIndex(DATAPOINTS_INDEX, dataPoint.getDataStoreDataType(), id(metricName, dataPoint.getTimestamp(), tags))
-          .setSource(source);
+          .setSource(source)
+          .setRefresh(true);
       IndexResponse response = request
           .execute()
           .actionGet();
