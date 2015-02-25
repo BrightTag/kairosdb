@@ -19,12 +19,12 @@ import com.google.inject.Inject;
 
 import org.elasticsearch.action.deletebyquery.DeleteByQueryRequestBuilder;
 import org.elasticsearch.action.deletebyquery.DeleteByQueryResponse;
+import org.elasticsearch.action.index.IndexRequestBuilder;
+import org.elasticsearch.action.index.IndexResponse;
 import org.elasticsearch.action.search.SearchRequestBuilder;
 import org.elasticsearch.action.search.SearchResponse;
 import org.elasticsearch.action.search.SearchScrollRequestBuilder;
 import org.elasticsearch.action.search.SearchType;
-import org.elasticsearch.action.update.UpdateRequestBuilder;
-import org.elasticsearch.action.update.UpdateResponse;
 import org.elasticsearch.client.Client;
 import org.elasticsearch.common.unit.TimeValue;
 import org.elasticsearch.common.xcontent.XContentBuilder;
@@ -95,14 +95,12 @@ public class ElasticsearchDatastore implements Datastore {
           .array("tags", buildTagsArray(tags))
           .endObject();
 
-      UpdateRequestBuilder request = client.prepareUpdate(DATAPOINTS_INDEX, dataPoint.getDataStoreDataType(), id(metricName, dataPoint.getTimestamp(), tags))
-          .setDoc(source)
-          .setDocAsUpsert(true)
-          .setRefresh(true);
-      UpdateResponse response = request
+      IndexRequestBuilder request = client.prepareIndex(DATAPOINTS_INDEX, dataPoint.getDataStoreDataType(), id(metricName, dataPoint.getTimestamp(), tags))
+          .setSource(source);
+      IndexResponse response = request
           .execute()
           .actionGet();
-      log.info("UPDATE REQUEST {} | UPDATE RESPONSE: {}", source.string(), updateResponseToString(response));
+      log.info("INDEX REQUEST {}\nINDEX RESPONSE: {}", source.string(), indexResponseToString(response));
     } catch (IOException e) {
       log.error(String.format("Failed to store %s at %s with tags %s", metricName, dataPoint.getTimestamp(), tags), e);
     }
@@ -116,7 +114,7 @@ public class ElasticsearchDatastore implements Datastore {
     DeleteByQueryResponse response = request
         .execute()
         .actionGet();
-    log.debug("DELETE REQUEST {} | DELETE RESPONSE {}", request, response);
+    log.debug("DELETE REQUEST {}\nDELETE RESPONSE {}", request, response);
   }
 
   @Override
@@ -315,13 +313,12 @@ public class ElasticsearchDatastore implements Datastore {
     return ROW_KEY_ID_JOINER.join(metricName, timestamp, tags);
   }
 
-  private static String updateResponseToString(UpdateResponse response) {
+  private static String indexResponseToString(IndexResponse response) {
     return Objects.toStringHelper(response.getClass())
         .add("index", response.getIndex())
         .add("type", response.getType())
         .add("id", response.getId())
         .add("version", response.getVersion())
-        .add("result", response.getGetResult())
         .toString();
   }
 }
