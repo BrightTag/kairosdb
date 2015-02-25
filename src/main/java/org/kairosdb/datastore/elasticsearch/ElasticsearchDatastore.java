@@ -13,12 +13,8 @@ import com.google.common.base.Function;
 import com.google.common.base.Joiner;
 import com.google.common.base.Objects;
 import com.google.common.base.Splitter;
-import com.google.common.collect.FluentIterable;
-import com.google.common.collect.ImmutableList;
-import com.google.common.collect.ImmutableSortedMap;
-import com.google.common.collect.Lists;
-import com.google.common.collect.Maps;
-import com.google.common.collect.SetMultimap;
+import com.google.common.collect.*;
+import com.google.common.primitives.Longs;
 import com.google.inject.Inject;
 
 import org.elasticsearch.action.deletebyquery.DeleteByQueryRequestBuilder;
@@ -27,22 +23,21 @@ import org.elasticsearch.action.index.IndexRequestBuilder;
 import org.elasticsearch.action.index.IndexResponse;
 import org.elasticsearch.action.search.SearchRequestBuilder;
 import org.elasticsearch.action.search.SearchResponse;
+import org.elasticsearch.action.search.SearchScrollRequestBuilder;
+import org.elasticsearch.action.search.SearchType;
 import org.elasticsearch.client.Client;
+import org.elasticsearch.common.unit.TimeValue;
 import org.elasticsearch.common.xcontent.XContentBuilder;
 import org.elasticsearch.index.query.BoolQueryBuilder;
 import org.elasticsearch.index.query.QueryBuilder;
-import org.elasticsearch.search.SearchHits;
 import org.elasticsearch.search.aggregations.AggregationBuilders;
 import org.elasticsearch.search.SearchHit;
 import org.elasticsearch.search.SearchHitField;
 import org.elasticsearch.search.aggregations.bucket.terms.Terms;
-import org.elasticsearch.search.sort.SortBuilders;
-import org.elasticsearch.search.sort.SortOrder;
 import org.kairosdb.core.DataPoint;
 import org.kairosdb.core.datapoints.LongDataPoint;
 import org.kairosdb.core.datastore.Datastore;
 import org.kairosdb.core.datastore.DatastoreMetricQuery;
-import org.kairosdb.core.datastore.Order;
 import org.kairosdb.core.datastore.QueryCallback;
 import org.kairosdb.core.datastore.TagSet;
 import org.kairosdb.core.datastore.TagSetImpl;
@@ -75,7 +70,7 @@ public class ElasticsearchDatastore implements Datastore {
 
   @Override
   public void queryDatabase(DatastoreMetricQuery query, QueryCallback queryCallback) throws DatastoreException {
-    SearchHits hits = doQuery(query);
+    List<SearchHit> hits = doQuery(query);
     try {
       for (SearchHit hit : hits) {
         Map<String, SearchHitField> fields = hit.getFields();
@@ -119,7 +114,7 @@ public class ElasticsearchDatastore implements Datastore {
     DeleteByQueryResponse response = request
         .execute()
         .actionGet();
-    log.info("DELETE REQUEST {}\nDELETE RESPONSE {}", request, response);
+    log.debug("DELETE REQUEST {}\nDELETE RESPONSE {}", request, response);
   }
 
   @Override
@@ -156,7 +151,7 @@ public class ElasticsearchDatastore implements Datastore {
 
   @Override
   public TagSet queryMetricTags(DatastoreMetricQuery query) throws DatastoreException {
-    SearchHits hits = doQuery(query);
+    List<SearchHit> hits = doQuery(query);
     TagSetImpl tagSet = new TagSetImpl();
     for (SearchHit hit : hits) {
       Map<String, SearchHitField> fields = hit.getFields();
@@ -173,20 +168,53 @@ public class ElasticsearchDatastore implements Datastore {
     client.close();
   }
 
-  private SearchHits doQuery(DatastoreMetricQuery query) {
-    QueryBuilder queryBuilder = buildQuery(query);
-    SearchRequestBuilder request = client.prepareSearch(DATAPOINTS_INDEX)
-        .setQuery(queryBuilder)
-        .addFields("name", "timestamp", "tags", "value")
-        .setSize(limitSize)
-        .addSort(SortBuilders.fieldSort("timestamp")
-            .order(query.getOrder() == Order.DESC ? SortOrder.DESC : SortOrder.ASC));
-    SearchResponse response = request
-        .execute()
-        .actionGet();
-    log.info("SEARCH REQUEST: {}\nSEARCH RESPONSE: {}", request, response);
-    return response.getHits();
+  private String oneline(Object o) {
+    return Joiner.on(" ").join(Splitter.on("\n").split(o.toString()));
   }
+
+	private List<SearchHit> doQuery(DatastoreMetricQuery query) {
+		QueryBuilder queryBuilder = buildQuery(query);
+		SearchRequestBuilder request = client.prepareSearch(DATAPOINTS_INDEX)
+        .setSearchType(SearchType.SCAN)
+        .setScroll(new TimeValue(5000))
+				.setQuery(queryBuilder)
+				.addFields("name", "timestamp", "tags", "value")
+				.setSize(limitSize);
+
+		SearchResponse response = request
+				.execute()
+				.actionGet();
+
+    SearchScrollRequestBuilder scrollRequestBuilder;
+
+    List<String> joshAndCodysDirtyLogObject = Lists.newArrayList();
+
+    joshAndCodysDirtyLogObject.add(String.format("SEARCH REQUEST: %s - SEARCH RESPONSE: %s", oneline(request), oneline(response)));
+
+    List<SearchHit> hits = Lists.newArrayList();
+    do {
+
+      hits.addAll(ImmutableList.copyOf(response.getHits().getHits()));
+      scrollRequestBuilder = client.prepareSearchScroll(response.getScrollId())
+          .setScroll(new TimeValue(5000));
+
+      response = scrollRequestBuilder.execute()
+          .actionGet();
+
+      joshAndCodysDirtyLogObject.add(String.format("SCROLL REQUEST: %s - SCROLL RESPONSE: %s", oneline(scrollRequestBuilder), oneline(response)));
+    } while (response.getHits().getHits().length > 0);
+
+    Ordering<SearchHit> searchHitOrdering = new Ordering<SearchHit>() {
+      public int compare(SearchHit left, SearchHit right) {
+        return Longs.compare(left.getFields().get("timestamp").<Long>getValue(), right.getFields().get("timestamp").<Long>getValue());
+      }
+    };
+
+
+    log.info(Joiner.on(" | ").join(joshAndCodysDirtyLogObject));
+
+    return searchHitOrdering.immutableSortedCopy(hits);
+	}
 
   private static Splitter TAG_SPLITTER = Splitter.on('=').trimResults();
 
