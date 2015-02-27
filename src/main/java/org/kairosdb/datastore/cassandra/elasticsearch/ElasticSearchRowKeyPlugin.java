@@ -10,15 +10,18 @@ import javax.inject.Named;
 
 import com.beust.jcommander.internal.Lists;
 import com.google.common.base.Function;
-import com.google.common.collect.FluentIterable;
-import com.google.common.collect.ImmutableList;
-import com.google.common.collect.Maps;
-import com.google.common.collect.SetMultimap;
+import com.google.common.base.Joiner;
+import com.google.common.base.Splitter;
+import com.google.common.collect.*;
+import com.google.common.primitives.Longs;
 import com.google.inject.Inject;
 
 import org.elasticsearch.action.search.SearchRequestBuilder;
 import org.elasticsearch.action.search.SearchResponse;
+import org.elasticsearch.action.search.SearchScrollRequestBuilder;
+import org.elasticsearch.action.search.SearchType;
 import org.elasticsearch.client.Client;
+import org.elasticsearch.common.unit.TimeValue;
 import org.elasticsearch.index.query.BoolQueryBuilder;
 import org.elasticsearch.search.SearchHit;
 import org.elasticsearch.search.SearchHitField;
@@ -56,6 +59,11 @@ public class ElasticSearchRowKeyPlugin implements CassandraRowKeyPlugin {
     return "elasticsearch";
   }
 
+
+  private String oneline(Object o) {
+    return Joiner.on(" ").join(Splitter.on("\n").split(o.toString()));
+  }
+
   @Override
   public Iterator<DataPointsRowKey> getKeysForQueryIterator(DatastoreMetricQuery query) {
     BoolQueryBuilder queryBuilder = boolQuery()
@@ -68,15 +76,46 @@ public class ElasticSearchRowKeyPlugin implements CassandraRowKeyPlugin {
     }
 
     SearchRequestBuilder request = client.prepareSearch(indexName)
+        .setSearchType(SearchType.SCAN)
+        .setScroll(new TimeValue(5000))
         .setQuery(queryBuilder)
         .addFields("name", "timestamp", "tags")
-        .setSize(query.getLimit() == 0 ? -1 : query.getLimit())
-        .addSort(SortBuilders.fieldSort("timestamp")
-            .order(query.getOrder() == Order.DESC ? SortOrder.DESC : SortOrder.ASC));
+        .setSize(50);  // TODO: Inject a value later
+
     SearchResponse response = request
         .execute()
         .actionGet();
-    List<DataPointsRowKey> datapoints = FluentIterable.from(response.getHits())
+
+    List<String> joshAndCodysDirtyLogObject = Lists.newArrayList();
+    joshAndCodysDirtyLogObject.add(String.format("SEARCH REQUEST: %s - SEARCH RESPONSE: %s", oneline(request), oneline(response)));
+
+    SearchScrollRequestBuilder scrollRequestBuilder;
+
+
+    List<SearchHit> hits = Lists.newArrayList();
+    do {
+
+      hits.addAll(ImmutableList.copyOf(response.getHits().getHits()));
+      scrollRequestBuilder = client.prepareSearchScroll(response.getScrollId())
+          .setScroll(new TimeValue(5000));
+
+      response = scrollRequestBuilder.execute()
+          .actionGet();
+
+      joshAndCodysDirtyLogObject.add(String.format("SCROLL REQUEST: %s - SCROLL RESPONSE: %s", oneline(scrollRequestBuilder), oneline(response)));
+    } while (response.getHits().getHits().length > 0);
+
+    Ordering<SearchHit> searchHitOrdering = new Ordering<SearchHit>() {
+      public int compare(SearchHit left, SearchHit right) {
+        return Longs.compare(left.getFields().get("timestamp").<Long>getValue(), right.getFields().get("timestamp").<Long>getValue());
+      }
+    };
+
+    log.info(Joiner.on(" | ").join(joshAndCodysDirtyLogObject));
+
+    ImmutableList<SearchHit> sortedHits = searchHitOrdering.immutableSortedCopy(hits);
+
+    List<DataPointsRowKey> datapoints = FluentIterable.from(sortedHits)
         .transform(new Function<SearchHit, DataPointsRowKey>() {
           @Override
           public DataPointsRowKey apply(SearchHit hit) {
@@ -88,7 +127,7 @@ public class ElasticSearchRowKeyPlugin implements CassandraRowKeyPlugin {
                 buildTagsField(fields.get("tags").getValues()));
           }
         }).toList();
-    log.info("SEARCH REQUEST: {}\nSEARCH RESPONSE: {}\nRETURNING DATAPOINTS: {}", request, response, datapoints);
+
     return datapoints.iterator();
   }
 

@@ -11,6 +11,11 @@ kairosdb.dataPointsQuery = function (metricQuery, callback) {
 
 	$status.html("<i>Query in progress...</i>");
 
+    for ( i in metricQuery['metrics'] ) {
+      m = metricQuery['metrics'][i];
+      m['plugins'] = ['elasticsearch'];
+    }
+
 	$.ajax({
 		type: "POST",
 		url: "api/v1/datapoints/query",

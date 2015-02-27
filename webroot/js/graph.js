@@ -642,6 +642,11 @@ function getTagsForMetric(metricName) {
 	query.setStartAbsolute(0);
 	$('body').toggleClass('cursorWaiting');
 
+    for ( i in query['metrics'] ) {
+      m = query['metrics'][i];
+      m['plugins'] = ['elasticsearch'];
+    }
+
 	$.ajax({
 		type: "POST",
 		url: "api/v1/datapoints/query/tags",

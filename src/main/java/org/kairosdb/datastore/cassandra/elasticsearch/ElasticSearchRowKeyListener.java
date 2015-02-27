@@ -56,7 +56,8 @@ public class ElasticSearchRowKeyListener implements RowKeyListener {
       source = source.endObject();
 
       IndexRequestBuilder request = client.prepareIndex(indexName, rowKey.getDataType(), id(rowKey))
-          .setSource(source);
+          .setSource(source)
+          .setRefresh(true);
       IndexResponse response = request
           .execute()
           .actionGet();

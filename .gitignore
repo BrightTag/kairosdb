@@ -4,6 +4,7 @@
 var/*
 target/*
 build/*
+cache/*
 */target/*
 .gradle/*
 out/*

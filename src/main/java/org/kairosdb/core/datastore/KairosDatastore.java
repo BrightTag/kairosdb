@@ -48,10 +48,6 @@ public class KairosDatastore
 {
 	public static final Logger logger = LoggerFactory.getLogger(KairosDatastore.class);
 	public static final String QUERY_CACHE_DIR = "kairosdb.query_cache.cache_dir";
-	public static final String QUERY_METRIC_TIME = "kairosdb.datastore.query_time";
-	public static final String QUERIES_WAITING_METRIC_NAME = "kairosdb.datastore.queries_waiting";
-    public static final String QUERY_SAMPLE_SIZE = "kairosdb.datastore.query_sample_size";
-    public static final String QUERY_ROW_COUNT = "kairosdb.datastore.query_row_count";
 
 	private final Datastore m_datastore;
 	private final QueryQueuingManager m_queuingManager;
@@ -405,12 +401,6 @@ public class KairosDatastore
 				throws UnsupportedEncodingException, NoSuchAlgorithmException,
 				InterruptedException, DatastoreException
 		{
-			//Report number of queries waiting
-			int waitingCount = m_queuingManager.getQueryWaitingCount();
-			if (waitingCount != 0)
-			{
-				ThreadReporter.addDataPoint(QUERIES_WAITING_METRIC_NAME, waitingCount);
-			}
 
 			m_metric = metric;
 			m_cacheFilename = calculateFilenameHash(metric);
@@ -466,11 +456,6 @@ public class KairosDatastore
 				m_dataPointCount += returnedRow.getDataPointCount();
 			}
 
-            m_rowCount = returnedRows.size();
-
-            ThreadReporter.addDataPoint(QUERY_SAMPLE_SIZE, m_dataPointCount);
-            ThreadReporter.addDataPoint(QUERY_ROW_COUNT, m_rowCount);
-
 			List<DataPointGroup> queryResults = groupByTypeAndTag(m_metric.getName(),
 					returnedRows, getTagGroupBy(m_metric.getGroupBys()), m_metric.getOrder());
 
@@ -519,9 +504,6 @@ public class KairosDatastore
 				m_results.add(aggregatedGroup);
 			}
 
-
-			//Report how long query took
-			ThreadReporter.addDataPoint(QUERY_METRIC_TIME, System.currentTimeMillis() - queryStartTime);
 
 			return (m_results);
 		}

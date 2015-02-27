@@ -67,12 +67,10 @@ public class CassandraDatastore implements Datastore
 
 	public static final long ROW_WIDTH = 1814400000L; //3 Weeks wide
 
-	public static final String KEY_QUERY_TIME = "kairosdb.datastore.cassandra.key_query_time";
-
 
 
 	public static final String CF_DATA_POINTS = "data_points";
-	public static final String CF_ROW_KEY_INDEX = "row_key_index";
+//	public static final String CF_ROW_KEY_INDEX = "row_key_index";
 	public static final String CF_STRING_INDEX = "string_index";
 
 	public static final String ROW_KEY_METRIC_NAMES = "metric_names";
@@ -87,7 +85,7 @@ public class CassandraDatastore implements Datastore
 	private int m_multiRowSize;
 	private int m_multiRowReadSize;
 	private WriteBuffer<DataPointsRowKey, Integer, byte[]> m_dataPointWriteBuffer;
-	private WriteBuffer<String, DataPointsRowKey, String> m_rowKeyWriteBuffer;
+//	private WriteBuffer<String, DataPointsRowKey, String> m_rowKeyWriteBuffer;
 	private WriteBuffer<String, String, String> m_stringIndexWriteBuffer;
 
 	private DataCache<DataPointsRowKey> m_rowKeyCache = new DataCache<DataPointsRowKey>(1024);
@@ -171,7 +169,7 @@ public class CassandraDatastore implements Datastore
 						}
 					}, mutatorLock, lockCondition, threadCount);
 
-			m_rowKeyWriteBuffer = new WriteBuffer<String, DataPointsRowKey, String>(
+/*  		m_rowKeyWriteBuffer = new WriteBuffer<String, DataPointsRowKey, String>(
 					m_keyspace, CF_ROW_KEY_INDEX, m_cassandraConfiguration.getWriteDelay(),
 					m_cassandraConfiguration.getMaxWriteSize(),
 					StringSerializer.get(),
@@ -194,6 +192,7 @@ public class CassandraDatastore implements Datastore
 									m_longDataPointFactory.createDataPoint(System.currentTimeMillis(), pendingWrites));
 						}
 					}, mutatorLock, lockCondition, threadCount);
+*/
 
 			m_stringIndexWriteBuffer = new WriteBuffer<String, String, String>(
 					m_keyspace, CF_STRING_INDEX,
@@ -245,8 +244,8 @@ public class CassandraDatastore implements Datastore
 		cfDef.add(HFactory.createColumnFamilyDefinition(
 				m_keyspaceName, CF_DATA_POINTS, ComparatorType.BYTESTYPE));
 
-		cfDef.add(HFactory.createColumnFamilyDefinition(
-				m_keyspaceName, CF_ROW_KEY_INDEX, ComparatorType.BYTESTYPE));
+//		cfDef.add(HFactory.createColumnFamilyDefinition(
+//				m_keyspaceName, CF_ROW_KEY_INDEX, ComparatorType.BYTESTYPE));
 
 		cfDef.add(HFactory.createColumnFamilyDefinition(
 				m_keyspaceName, CF_STRING_INDEX, ComparatorType.UTF8TYPE));
@@ -261,7 +260,7 @@ public class CassandraDatastore implements Datastore
 	public void increaseMaxBufferSizes()
 	{
 		m_dataPointWriteBuffer.increaseMaxBufferSize();
-		m_rowKeyWriteBuffer.increaseMaxBufferSize();
+//		m_rowKeyWriteBuffer.increaseMaxBufferSize();
 		m_stringIndexWriteBuffer.increaseMaxBufferSize();
 	}
 
@@ -284,7 +283,7 @@ public class CassandraDatastore implements Datastore
 	public void close() throws InterruptedException
 	{
 		m_dataPointWriteBuffer.close();
-		m_rowKeyWriteBuffer.close();
+//		m_rowKeyWriteBuffer.close();
 		m_stringIndexWriteBuffer.close();
 	}
 
@@ -314,7 +313,7 @@ public class CassandraDatastore implements Datastore
 			DataPointsRowKey cachedKey = m_rowKeyCache.cacheItem(rowKey);
 			if (cachedKey == null)
 			{
-				m_rowKeyWriteBuffer.addData(metricName, rowKey, "", now, rowKeyTtl);
+//				m_rowKeyWriteBuffer.addData(metricName, rowKey, "", now, rowKeyTtl);
 				for (RowKeyListener rowKeyListener : m_rowKeyListeners)
 					rowKeyListener.addRowKey(metricName, rowKey, rowKeyTtl);
 			}
@@ -473,7 +472,7 @@ public class CassandraDatastore implements Datastore
 	private void queryWithRowKeys(DatastoreMetricQuery query,
 			QueryCallback queryCallback, Iterator<DataPointsRowKey> rowKeys)
 	{
-		long startTime = System.currentTimeMillis();
+
 		long currentTimeTier = 0L;
 		String currentType = null;
 
@@ -519,8 +518,6 @@ public class CassandraDatastore implements Datastore
 					m_multiRowReadSize, query.getLimit(), query.getOrder()));
 		}
 
-		ThreadReporter.addDataPoint(KEY_QUERY_TIME, System.currentTimeMillis() - startTime);
-
 		//Changing the check rate
 		mm.setCheckRate(1);
 		try
@@ -562,7 +559,7 @@ public class CassandraDatastore implements Datastore
 			if (deleteQuery.getStartTime() <= rowKeyTimestamp && (deleteQuery.getEndTime() >= rowKeyTimestamp + ROW_WIDTH - 1))
 			{
 				m_dataPointWriteBuffer.deleteRow(rowKey, now);  // delete the whole row
-				m_rowKeyWriteBuffer.deleteColumn(rowKey.getMetricName(), rowKey, now); // Delete the index
+//				m_rowKeyWriteBuffer.deleteColumn(rowKey.getMetricName(), rowKey, now); // Delete the index
 				m_rowKeyCache.clear();
 			}
 			else
@@ -576,7 +573,7 @@ public class CassandraDatastore implements Datastore
 		// If index is gone, delete metric name from Strings column family
 		if (deleteAll)
 		{
-			m_rowKeyWriteBuffer.deleteRow(deleteQuery.getName(), now);
+//			m_rowKeyWriteBuffer.deleteRow(deleteQuery.getName(), now);
 			m_stringIndexWriteBuffer.deleteColumn(ROW_KEY_METRIC_NAMES, deleteQuery.getName(), now);
 			m_rowKeyCache.clear();
 			m_metricNameCache.clear();
@@ -612,18 +609,18 @@ public class CassandraDatastore implements Datastore
 			if (plugin instanceof CassandraRowKeyPlugin)
 			{
 				ret = ((CassandraRowKeyPlugin) plugin).getKeysForQueryIterator(query);
-				break;
+        return (ret);
 			}
 		}
 
-		//Default to old behavior if no plugin was provided
-		if (ret == null)
-		{
-			ret = new FilteredRowKeyIterator(query.getName(), query.getStartTime(),
-					query.getEndTime(), query.getTags());
-		}
+    throw new RuntimeException("done blowed up!");
+		//Default to old behavior if no plugin was provided - JOSH - NOPE!
+//		if (ret == null)
+//		{
+//			ret = new FilteredRowKeyIterator(query.getName(), query.getStartTime(),
+//					query.getEndTime(), query.getTags());
+//		}
 
-		return (ret);
 	}
 
 	public static long calculateRowTime(long timestamp)
@@ -673,116 +670,117 @@ public class CassandraDatastore implements Datastore
 		return ((columnName & 0x1) == LONG_FLAG);
 	}
 
-	private class FilteredRowKeyIterator implements Iterator<DataPointsRowKey>
-	{
-		private ColumnSliceIterator<String, DataPointsRowKey, String> m_sliceIterator;
-
-		/**
-		 Used when a query spans positive and negative time values, we have to
-		 query the positive separate from the negative times as negative times
-		 are sorted after the positive ones.
-		 */
-		private ColumnSliceIterator<String, DataPointsRowKey, String> m_continueSliceIterator;
-		private DataPointsRowKey m_nextKey;
-		private SetMultimap<String, String> m_filterTags;
-
-		public FilteredRowKeyIterator(String metricName, long startTime, long endTime,
-				SetMultimap<String, String> filterTags)
-		{
-			m_filterTags = filterTags;
-			SliceQuery<String, DataPointsRowKey, String> sliceQuery =
-					HFactory.createSliceQuery(m_keyspace, StringSerializer.get(),
-							new DataPointsRowKeySerializer(true), StringSerializer.get());
-
-			sliceQuery.setColumnFamily(CF_ROW_KEY_INDEX)
-					.setKey(metricName);
-
-			if ((startTime < 0) && (endTime >= 0))
-			{
-				m_sliceIterator = createSliceIterator(sliceQuery, metricName,
-						startTime, -1L);
-
-				SliceQuery<String, DataPointsRowKey, String> sliceQuery2 =
-						HFactory.createSliceQuery(m_keyspace, StringSerializer.get(),
-								new DataPointsRowKeySerializer(true), StringSerializer.get());
-
-				sliceQuery2.setColumnFamily(CF_ROW_KEY_INDEX)
-						.setKey(metricName);
-
-				m_continueSliceIterator = createSliceIterator(sliceQuery2, metricName,
-						0, endTime);
-			}
-			else
-			{
-				m_sliceIterator = createSliceIterator(sliceQuery, metricName,
-						startTime, endTime);
-			}
-
-		}
-
-		private ColumnSliceIterator<String, DataPointsRowKey, String> createSliceIterator(
-				SliceQuery<String, DataPointsRowKey, String> sliceQuery,
-				String metricName, long startTime, long endTime)
-		{
-			DataPointsRowKey startKey = new DataPointsRowKey(metricName,
-					calculateRowTime(startTime), "");
-
-			DataPointsRowKey endKey = new DataPointsRowKey(metricName,
-					calculateRowTime(endTime), "");
-			endKey.setEndSearchKey(true);
-
-			ColumnSliceIterator<String, DataPointsRowKey, String> iterator = new ColumnSliceIterator<String, DataPointsRowKey, String>(sliceQuery,
-					startKey, endKey, false, m_singleRowReadSize);
-
-			return (iterator);
-		}
-
-		private DataPointsRowKey nextKeyFromIterator(ColumnSliceIterator<String, DataPointsRowKey, String> iterator)
-		{
-			DataPointsRowKey next = null;
-
-			outer:
-			while (iterator.hasNext())
-			{
-				DataPointsRowKey rowKey = iterator.next().getName();
-
-				Map<String, String> keyTags = rowKey.getTags();
-				for (String tag : m_filterTags.keySet())
-				{
-					String value = keyTags.get(tag);
-					if (value == null || !m_filterTags.get(tag).contains(value))
-						continue outer; //Don't want this key
-				}
-
-				next = rowKey;
-				break;
-			}
-
-			return (next);
-		}
-
-		@Override
-		public boolean hasNext()
-		{
-			m_nextKey = nextKeyFromIterator(m_sliceIterator);
-
-			if ((m_nextKey == null) && (m_continueSliceIterator != null))
-				m_nextKey = nextKeyFromIterator(m_continueSliceIterator);
-
-			return (m_nextKey != null);
-		}
-
-		@Override
-		public DataPointsRowKey next()
-		{
-			return m_nextKey;
-		}
-
-		@Override
-		public void remove()
-		{
-		}
-	}
+//
+//	private class FilteredRowKeyIterator implements Iterator<DataPointsRowKey>
+//	{
+//		private ColumnSliceIterator<String, DataPointsRowKey, String> m_sliceIterator;
+//
+//		/**
+//		 Used when a query spans positive and negative time values, we have to
+//		 query the positive separate from the negative times as negative times
+//		 are sorted after the positive ones.
+//		 */
+//		private ColumnSliceIterator<String, DataPointsRowKey, String> m_continueSliceIterator;
+//		private DataPointsRowKey m_nextKey;
+//		private SetMultimap<String, String> m_filterTags;
+//
+//		public FilteredRowKeyIterator(String metricName, long startTime, long endTime,
+//				SetMultimap<String, String> filterTags)
+//		{
+//			m_filterTags = filterTags;
+//			SliceQuery<String, DataPointsRowKey, String> sliceQuery =
+//					HFactory.createSliceQuery(m_keyspace, StringSerializer.get(),
+//							new DataPointsRowKeySerializer(true), StringSerializer.get());
+//
+//			sliceQuery.setColumnFamily(CF_ROW_KEY_INDEX)
+//					.setKey(metricName);
+//
+//			if ((startTime < 0) && (endTime >= 0))
+//			{
+//				m_sliceIterator = createSliceIterator(sliceQuery, metricName,
+//						startTime, -1L);
+//
+//				SliceQuery<String, DataPointsRowKey, String> sliceQuery2 =
+//						HFactory.createSliceQuery(m_keyspace, StringSerializer.get(),
+//								new DataPointsRowKeySerializer(true), StringSerializer.get());
+//
+//				sliceQuery2.setColumnFamily(CF_ROW_KEY_INDEX)
+//						.setKey(metricName);
+//
+//				m_continueSliceIterator = createSliceIterator(sliceQuery2, metricName,
+//						0, endTime);
+//			}
+//			else
+//			{
+//				m_sliceIterator = createSliceIterator(sliceQuery, metricName,
+//						startTime, endTime);
+//			}
+//
+//		}
+//
+//		private ColumnSliceIterator<String, DataPointsRowKey, String> createSliceIterator(
+//				SliceQuery<String, DataPointsRowKey, String> sliceQuery,
+//				String metricName, long startTime, long endTime)
+//		{
+//			DataPointsRowKey startKey = new DataPointsRowKey(metricName,
+//					calculateRowTime(startTime), "");
+//
+//			DataPointsRowKey endKey = new DataPointsRowKey(metricName,
+//					calculateRowTime(endTime), "");
+//			endKey.setEndSearchKey(true);
+//
+//			ColumnSliceIterator<String, DataPointsRowKey, String> iterator = new ColumnSliceIterator<String, DataPointsRowKey, String>(sliceQuery,
+//					startKey, endKey, false, m_singleRowReadSize);
+//
+//			return (iterator);
+//		}
+//
+//		private DataPointsRowKey nextKeyFromIterator(ColumnSliceIterator<String, DataPointsRowKey, String> iterator)
+//		{
+//			DataPointsRowKey next = null;
+//
+//			outer:
+//			while (iterator.hasNext())
+//			{
+//				DataPointsRowKey rowKey = iterator.next().getName();
+//
+//				Map<String, String> keyTags = rowKey.getTags();
+//				for (String tag : m_filterTags.keySet())
+//				{
+//					String value = keyTags.get(tag);
+//					if (value == null || !m_filterTags.get(tag).contains(value))
+//						continue outer; //Don't want this key
+//				}
+//
+//				next = rowKey;
+//				break;
+//			}
+//
+//			return (next);
+//		}
+//
+//		@Override
+//		public boolean hasNext()
+//		{
+//			m_nextKey = nextKeyFromIterator(m_sliceIterator);
+//
+//			if ((m_nextKey == null) && (m_continueSliceIterator != null))
+//				m_nextKey = nextKeyFromIterator(m_continueSliceIterator);
+//
+//			return (m_nextKey != null);
+//		}
+//
+//		@Override
+//		public DataPointsRowKey next()
+//		{
+//			return m_nextKey;
+//		}
+//
+//		@Override
+//		public void remove()
+//		{
+//		}
+//	}
 
 	private class DeletingCallback implements QueryCallback
 	{
