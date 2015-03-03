@@ -644,7 +644,7 @@ function getTagsForMetric(metricName) {
 
     for ( i in query['metrics'] ) {
       m = query['metrics'][i];
-      m['plugins'] = ['elasticsearch'];
+      m['plugins'] = [{'name':'elasticsearch'}];
     }
 
 	$.ajax({

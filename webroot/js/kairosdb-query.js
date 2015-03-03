@@ -13,7 +13,7 @@ kairosdb.dataPointsQuery = function (metricQuery, callback) {
 
     for ( i in metricQuery['metrics'] ) {
       m = metricQuery['metrics'][i];
-      m['plugins'] = ['elasticsearch'];
+      m['plugins'] = [{'name':'elasticsearch'}];
     }
 
 	$.ajax({
