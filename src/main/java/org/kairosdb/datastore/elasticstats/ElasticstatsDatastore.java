@@ -11,6 +11,7 @@ import javax.annotation.Nullable;
 import javax.inject.Named;
 
 import com.google.common.base.Function;
+import com.google.common.base.Functions;
 import com.google.common.base.Joiner;
 import com.google.common.base.Objects;
 import com.google.common.base.Splitter;
@@ -27,12 +28,7 @@ import com.google.inject.Inject;
 import com.mongodb.BasicDBObject;
 import com.mongodb.DBCollection;
 import com.mongodb.DBCursor;
-import com.mongodb.DBObject;
-import com.mongodb.MongoClient;
 
-import org.elasticsearch.action.deletebyquery.DeleteByQueryRequestBuilder;
-import org.elasticsearch.action.deletebyquery.DeleteByQueryResponse;
-import org.elasticsearch.action.index.IndexRequestBuilder;
 import org.elasticsearch.action.index.IndexResponse;
 import org.elasticsearch.action.search.SearchRequestBuilder;
 import org.elasticsearch.action.search.SearchResponse;
@@ -40,7 +36,6 @@ import org.elasticsearch.action.search.SearchScrollRequestBuilder;
 import org.elasticsearch.action.search.SearchType;
 import org.elasticsearch.client.Client;
 import org.elasticsearch.common.unit.TimeValue;
-import org.elasticsearch.common.xcontent.XContentBuilder;
 import org.elasticsearch.index.query.BoolQueryBuilder;
 import org.elasticsearch.index.query.QueryBuilder;
 import org.elasticsearch.search.SearchHit;
@@ -80,48 +75,72 @@ public class ElasticstatsDatastore implements Datastore {
 
   @Inject
   public ElasticstatsDatastore(Client esClient, DBCollection mongoClient,
-      @Named(ElasticstatsModule.MAX_RECORD_COUNT) int esLimitSize) {
+      @Named(ElasticstatsModule.ES_MAX_RECORD_COUNT) int esLimitSize) {
     this.client = esClient;
     this.mongoClient = mongoClient;
     this.esLimitSize = esLimitSize;
+  }
+
+  private class BucketCount {
+    private final long timestamp;
+    private final long count;
+
+    public BucketCount(long timestamp, long count) {
+      this.timestamp = timestamp;
+      this.count = count;
+    }
   }
 
   @Override
   public void queryDatabase(DatastoreMetricQuery query, QueryCallback queryCallback) throws DatastoreException {
     List<SearchHit> hits = doQuery(query);
     try {
-      List<String> recordIds = Lists.newArrayListWithCapacity(hits.size());
       Map<String, SearchHit> hitsById = Maps.newHashMapWithExpectedSize(hits.size());
-      Map<String, Integer> countsById = Maps.newHashMapWithExpectedSize(hits.size());
       for (SearchHit hit : hits) {
-        String id = hit.getFields().get("_id").getValue();
-        recordIds.add(id);
-        hitsById.put(id, hit);
+        hitsById.put(hit.getId(), hit);
       }
-      DBCursor cursor = mongoClient.find(new BasicDBObject("_id", new BasicDBObject("$in", recordIds)));
+      DBCursor cursor = mongoClient.find(new BasicDBObject(
+          "id", new BasicDBObject(
+              "$in", hitsById.keySet())).append(
+          "timestamp", new BasicDBObject(
+              "$gte", query.getStartTime()).append(
+              "$lt", query.getEndTime())));
+
+      final Map<String, BucketCount> bucketCountsById = Maps.newHashMapWithExpectedSize(hits.size());
       try {
         while (cursor.hasNext()) {
           BasicDBObject res = (BasicDBObject) cursor.next();
-          countsById.put(res.getString("_id"), res.getInt("count"));
+          bucketCountsById.put(res.getString("id"), new BucketCount(res.getLong("timestamp"), res.getInt("count")));
         }
       } finally {
         cursor.close();
       }
-      Set<String> noCount = Sets.difference(hitsById.keySet(), countsById.keySet());
-      Set<String> noHit = Sets.difference(countsById.keySet(), hitsById.keySet());
+
+      Set<String> noCount = Sets.difference(hitsById.keySet(), bucketCountsById.keySet());
+      Set<String> noHit = Sets.difference(bucketCountsById.keySet(), hitsById.keySet());
       if (!noCount.isEmpty()) {
-        log.warn("Missing data for index: %s", noCount);
+        log.warn("Missing data for index: {}", noCount);
       }
       if (!noHit.isEmpty()) {
         // This shouldn't be possible, since we only query for what the index returns
-        log.warn("Missing index for data: %s", noHit);
+        log.warn("Missing index for data: {}", noHit);
       }
-      for (Map.Entry<String, Integer> entry : countsById.entrySet()) {
+
+      Ordering<String> byTimestamp = Ordering.natural().nullsLast().onResultOf(new Function<String, Long>() {
+        @Override
+        public @Nullable Long apply(@Nullable String id) {
+          return id == null ? null : bucketCountsById.get(id).timestamp;
+        }
+      });
+
+      for (Map.Entry<String, BucketCount> entry : ImmutableSortedMap.copyOf(bucketCountsById, byTimestamp).entrySet()) {
+        BucketCount bucketCount = entry.getValue();
         SearchHit hit = hitsById.get(entry.getKey());
-        Map<String, SearchHitField> fields = hit.getFields();
+
         // Most naive implementation possible
+        Map<String, SearchHitField> fields = hit.getFields();
         queryCallback.startDataPointSet(hit.getType(), buildTagsField(fields.get("tags").getValues()));
-        queryCallback.addDataPoint(new LongDataPoint(fields.get("timestamp").<Long>getValue(), entry.getValue()));
+        queryCallback.addDataPoint(new LongDataPoint(bucketCount.timestamp, bucketCount.count));
         queryCallback.endDataPoints();
       }
     } catch (IOException e) {
@@ -131,12 +150,12 @@ public class ElasticstatsDatastore implements Datastore {
 
   @Override
   public void putDataPoint(String metricName, ImmutableSortedMap<String, String> tags, DataPoint dataPoint) throws DatastoreException {
-    throw new UnsupportedOperationException();
+//    throw new UnsupportedOperationException();
   }
 
   @Override
   public void deleteDataPoints(DatastoreMetricQuery query) throws DatastoreException {
-    throw new UnsupportedOperationException();
+//    throw new UnsupportedOperationException();
   }
 
   @Override
@@ -145,7 +164,7 @@ public class ElasticstatsDatastore implements Datastore {
         .addAggregation(AggregationBuilders
             .terms("metric_name")
             .field("name")
-            .order(Terms.Order.term(true))
+            .order(Terms.Order.term(true)) // ascending
             .size(0)
             .shardSize(0))
         .execute()
@@ -200,7 +219,7 @@ public class ElasticstatsDatastore implements Datastore {
         .setSearchType(SearchType.SCAN)
         .setScroll(new TimeValue(5000))
         .setQuery(queryBuilder)
-        .addFields("name", "timestamp", "tags")
+        .addFields("_id", "name", "tags")
         .setSize(esLimitSize);
 
     SearchResponse response = request
@@ -226,16 +245,8 @@ public class ElasticstatsDatastore implements Datastore {
       joshAndCodysDirtyLogObject.add(String.format("SCROLL REQUEST: %s - SCROLL RESPONSE: %s", oneline(scrollRequestBuilder), oneline(response)));
     } while (response.getHits().getHits().length > 0);
 
-    Ordering<SearchHit> searchHitOrdering = new Ordering<SearchHit>() {
-      public int compare(SearchHit left, SearchHit right) {
-        return Longs.compare(left.getFields().get("timestamp").<Long>getValue(), right.getFields().get("timestamp").<Long>getValue());
-      }
-    };
-
-
     log.info(Joiner.on(" | ").join(joshAndCodysDirtyLogObject));
-
-    return searchHitOrdering.immutableSortedCopy(hits);
+    return hits;
   }
 
   private static Splitter TAG_SPLITTER = Splitter.on('=').trimResults();
@@ -245,7 +256,7 @@ public class ElasticstatsDatastore implements Datastore {
         .addAggregation(AggregationBuilders
             .terms("metric_tags")
             .field("tags")
-            .order(Terms.Order.term(true))
+            .order(Terms.Order.term(true)) // ascending
             .size(0)
             .shardSize(0))
         .execute()
@@ -284,10 +295,7 @@ public class ElasticstatsDatastore implements Datastore {
 
   private BoolQueryBuilder buildQuery(DatastoreMetricQuery query) {
     BoolQueryBuilder queryBuilder = boolQuery()
-        .must(termQuery("name", query.getName()))
-        .must(rangeQuery("timestamp")
-            .from(query.getStartTime())
-            .to(query.getEndTime())); // by default, start and end are both inclusive
+        .must(termQuery("name", query.getName()));
     for (List<String> tags : buildTagsQueries(query.getTags())) {
       queryBuilder.must(termsQuery("tags", tags));
     }
