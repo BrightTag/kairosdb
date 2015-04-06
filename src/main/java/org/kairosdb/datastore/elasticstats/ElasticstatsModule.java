@@ -90,6 +90,7 @@ public class ElasticstatsModule extends AbstractModule {
         throw Throwables.propagate(e);
       }
     }
+    logger.info("Database: {}, Collection: {}", database, collection);
     return client.getDB(database).getCollection(collection);
   }
 

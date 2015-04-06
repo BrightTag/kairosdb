@@ -4,14 +4,12 @@ import java.io.IOException;
 import java.util.Collection;
 import java.util.List;
 import java.util.Map;
-import java.util.Set;
 import java.util.SortedMap;
 
 import javax.annotation.Nullable;
 import javax.inject.Named;
 
 import com.google.common.base.Function;
-import com.google.common.base.Functions;
 import com.google.common.base.Joiner;
 import com.google.common.base.Objects;
 import com.google.common.base.Splitter;
@@ -19,11 +17,10 @@ import com.google.common.collect.FluentIterable;
 import com.google.common.collect.ImmutableList;
 import com.google.common.collect.ImmutableSortedMap;
 import com.google.common.collect.Lists;
+import com.google.common.collect.MapDifference;
 import com.google.common.collect.Maps;
 import com.google.common.collect.Ordering;
 import com.google.common.collect.SetMultimap;
-import com.google.common.collect.Sets;
-import com.google.common.primitives.Longs;
 import com.google.inject.Inject;
 import com.mongodb.BasicDBObject;
 import com.mongodb.DBCollection;
@@ -53,9 +50,7 @@ import org.kairosdb.core.exception.DatastoreException;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 
-import static org.elasticsearch.common.xcontent.XContentFactory.jsonBuilder;
 import static org.elasticsearch.index.query.QueryBuilders.boolQuery;
-import static org.elasticsearch.index.query.QueryBuilders.rangeQuery;
 import static org.elasticsearch.index.query.QueryBuilders.termQuery;
 import static org.elasticsearch.index.query.QueryBuilders.termsQuery;
 
@@ -81,68 +76,148 @@ public class ElasticstatsDatastore implements Datastore {
     this.esLimitSize = esLimitSize;
   }
 
-  private class BucketCount {
-    private final long timestamp;
-    private final long count;
+  private class Bucket {
+    private String id;
+    private long timestamp;
+    private BucketMeta meta;
 
-    public BucketCount(long timestamp, long count) {
+    public Bucket(String id, long timestamp, BucketMeta meta) {
+      this.id = id;
       this.timestamp = timestamp;
-      this.count = count;
+      this.meta = meta;
+    }
+
+    @Override
+    public boolean equals(Object obj) {
+      if (obj == null) return false;
+      if (getClass() != obj.getClass()) return false;
+      Bucket other = (Bucket) obj;
+      return Objects.equal(this.id, other.id) && Objects.equal(this.timestamp, other.timestamp);
+    }
+
+    @Override
+    public int hashCode() {
+      return Objects.hashCode(id, timestamp);
+    }
+
+    @Override
+    public String toString() {
+      return Objects.toStringHelper(this)
+          .add("id", id)
+          .add("timestamp", timestamp)
+          .add("meta", meta)
+          .toString();
     }
   }
+
+  private class BucketMeta {
+    private String type;
+    private SortedMap<String, String> tags;
+
+    public BucketMeta(String type, SortedMap<String, String> tags) {
+      this.type = type;
+      this.tags = tags;
+    }
+
+    @Override
+    public boolean equals(Object obj) {
+      if (obj == null) return false;
+      if (getClass() != obj.getClass()) return false;
+      BucketMeta other = (BucketMeta) obj;
+      return Objects.equal(this.type, other.type) && Objects.equal(this.tags, other.tags);
+    }
+
+    @Override
+    public int hashCode() {
+      return Objects.hashCode(type, tags);
+    }
+
+    @Override
+    public String toString() {
+      return Objects.toStringHelper(this)
+          .add("type", type)
+          .add("tags", tags)
+          .toString();
+    }
+//    public boolean isPresentInTimeSlice() {
+//      return timestamp != null && count != null;
+//    }
+  }
+
+  private static final Ordering<Bucket> BY_TIMESTAMP = Ordering.natural().nullsLast()
+      .onResultOf(new Function<Bucket, Long>() {
+        @Override
+        public @Nullable Long apply(@Nullable Bucket bucket) {
+          return bucket == null ? null : bucket.timestamp;
+        }
+      })
+      .compound(Ordering.natural().nullsLast()
+          .onResultOf(new Function<Bucket, String>() {
+              @Override
+              public @Nullable String apply(@Nullable Bucket bucket) {
+                return bucket == null ? null : bucket.id;
+              }
+            }
+          )
+      );
 
   @Override
   public void queryDatabase(DatastoreMetricQuery query, QueryCallback queryCallback) throws DatastoreException {
     List<SearchHit> hits = doQuery(query);
     try {
-      Map<String, SearchHit> hitsById = Maps.newHashMapWithExpectedSize(hits.size());
+      Map<String, BucketMeta> byId = Maps.newHashMapWithExpectedSize(hits.size());
       for (SearchHit hit : hits) {
-        hitsById.put(hit.getId(), hit);
+        byId.put(hit.getId(), new BucketMeta(hit.getType(), buildTagsField(hit.getFields().get("tags").getValues())));
       }
+//      log.info("ID IN {}, {} >= timestamp < {}", byId.keySet(), query.getStartTime(), query.getEndTime());
       DBCursor cursor = mongoClient.find(new BasicDBObject(
           "id", new BasicDBObject(
-              "$in", hitsById.keySet())).append(
+          "$in", byId.keySet())).append(
           "timestamp", new BasicDBObject(
               "$gte", query.getStartTime()).append(
               "$lt", query.getEndTime())));
 
-      final Map<String, BucketCount> bucketCountsById = Maps.newHashMapWithExpectedSize(hits.size());
+      Map<Bucket, Integer> counts = Maps.newHashMap();
+//      Map<Long, Integer> mongoTimestampCounts = Maps.newHashMap();
       try {
         while (cursor.hasNext()) {
           BasicDBObject res = (BasicDBObject) cursor.next();
-          bucketCountsById.put(res.getString("id"), new BucketCount(res.getLong("timestamp"), res.getInt("count")));
+          String id = res.getString("id");
+          Bucket bucket = new Bucket(id, res.getLong("timestamp"), byId.get(id));
+          if (counts.containsKey(bucket)) {
+            log.error("Counts already contains bucket ({},{})", bucket.id, bucket.timestamp);
+          }
+          counts.put(bucket, res.getInt("count"));
+//          if (entry.timestamp != null || entry.count != null) {
+//            log.error("PRE EXISTING ENTRY STUFF : {}=>{} and {}=>{}", entry.timestamp, res.getLong("timestamp"), entry.count, res.getLong("count"));
+//          }
+//          entry.timestamp = res.getLong("timestamp");
+//          entry.count = res.getLong("count");
+//          log.info("Timestamp: {}", entry.timestamp);
+//          mongoTimestampCounts.put(entry.timestamp, Objects.firstNonNull(mongoTimestampCounts.get(entry.timestamp), 0) + 1);
         }
       } finally {
         cursor.close();
       }
 
-      Set<String> noCount = Sets.difference(hitsById.keySet(), bucketCountsById.keySet());
-      Set<String> noHit = Sets.difference(bucketCountsById.keySet(), hitsById.keySet());
-      if (!noCount.isEmpty()) {
-        log.warn("Missing data for index: {}", noCount);
-      }
-      if (!noHit.isEmpty()) {
-        // This shouldn't be possible, since we only query for what the index returns
-        log.warn("Missing index for data: {}", noHit);
+      // CALLBACK TIMESTAMP IS ALWAYS THE SAME!! BUGGGGGG
+      Map<Long, Integer> callbackTimestampCounts = Maps.newHashMap();
+      SortedMap<Bucket, Integer> sortedCounts = ImmutableSortedMap.<Bucket, Integer>orderedBy(BY_TIMESTAMP).putAll(counts).build();
+      for (Map.Entry<Bucket, Integer> entry : sortedCounts.entrySet()) {
+        Bucket bucket = entry.getKey();
+        callbackTimestampCounts.put(bucket.timestamp, Objects.firstNonNull(callbackTimestampCounts.get(bucket.timestamp), 0) + 1);
+//        if (bucketMeta.isPresentInTimeSlice()) {
+          // Most naive implementation possible
+//          log.info("CALLBACK Timestamp: {}", bucketCount.timestamp);
+          queryCallback.startDataPointSet(bucket.meta.type, bucket.meta.tags);
+          queryCallback.addDataPoint(new LongDataPoint(bucket.timestamp, entry.getValue()));
+          queryCallback.endDataPoints();
+//        }
       }
 
-      Ordering<String> byTimestamp = Ordering.natural().nullsLast().onResultOf(new Function<String, Long>() {
-        @Override
-        public @Nullable Long apply(@Nullable String id) {
-          return id == null ? null : bucketCountsById.get(id).timestamp;
-        }
-      });
+//      MapDifference<Long, Integer> diff = Maps.difference(mongoTimestampCounts, callbackTimestampCounts);
+//      log.info("Difference: {}", diff);
 
-      for (Map.Entry<String, BucketCount> entry : ImmutableSortedMap.copyOf(bucketCountsById, byTimestamp).entrySet()) {
-        BucketCount bucketCount = entry.getValue();
-        SearchHit hit = hitsById.get(entry.getKey());
-
-        // Most naive implementation possible
-        Map<String, SearchHitField> fields = hit.getFields();
-        queryCallback.startDataPointSet(hit.getType(), buildTagsField(fields.get("tags").getValues()));
-        queryCallback.addDataPoint(new LongDataPoint(bucketCount.timestamp, bucketCount.count));
-        queryCallback.endDataPoints();
-      }
     } catch (IOException e) {
       log.error("Problem querying Elasticsearch", e);
     }
@@ -245,7 +320,7 @@ public class ElasticstatsDatastore implements Datastore {
       joshAndCodysDirtyLogObject.add(String.format("SCROLL REQUEST: %s - SCROLL RESPONSE: %s", oneline(scrollRequestBuilder), oneline(response)));
     } while (response.getHits().getHits().length > 0);
 
-    log.info(Joiner.on(" | ").join(joshAndCodysDirtyLogObject));
+//    log.info(Joiner.on(" | ").join(joshAndCodysDirtyLogObject));
     return hits;
   }
 

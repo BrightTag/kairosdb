@@ -22,6 +22,7 @@ import org.kairosdb.core.DataPoint;
 import org.kairosdb.core.datastore.DataPointGroup;
 import org.kairosdb.core.datastore.Sampling;
 import org.kairosdb.core.datastore.TimeUnit;
+import org.slf4j.LoggerFactory;
 
 import javax.validation.Valid;
 import javax.validation.constraints.NotNull;
@@ -226,6 +227,7 @@ public abstract class RangeAggregator implements Aggregator
 		protected long getStartRange(long timestamp)
 		{
 			int samplingValue = m_sampling.getValue();
+//      LoggerFactory.getLogger(getClass()).info("Timestamp={}, Start={}", timestamp, m_startTime);
 			long numberOfPastPeriods = m_unitField.getDifference(timestamp/*getDataPointTime()*/, m_startTime) / samplingValue;
 			return m_unitField.add(m_startTime, numberOfPastPeriods * samplingValue);
 		}
